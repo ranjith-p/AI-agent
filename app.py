@@ -1,5 +1,17 @@
-from smolagents import CodeAgent,DuckDuckGoSearchTool, HfApiModel,load_tool,tool
+from smolagents import (
+    CodeAgent,
+    LiteLLMModel,
+    DuckDuckGoSearchTool,
+    VisitWebpageTool,
+    load_tool,
+    tool
+)
+
+import litellm
+
+import os
 import datetime
+from ddgs import DDGS
 import requests
 import pytz
 import yaml
@@ -7,16 +19,59 @@ from tools.final_answer import FinalAnswerTool
 
 from Gradio_UI import GradioUI
 
+litellm.turn_on_debug()
+
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "YOUR_GROQ_API_KEY")
+
 # Below is an example of a tool that does nothing. Amaze us with your creativity !
 @tool
-def my_custom_tool(arg1:str, arg2:int)-> str: #it's import to specify the return type
-    #Keep this format for the description / args / args description but feel free to modify the tool
-    """A tool that does nothing yet 
-    Args:
-        arg1: the first argument
-        arg2: the second argument
+def search_ai_news(query: str) -> str:
     """
-    return "What magic will you build ?"
+    Search for recent artificial intelligence news.
+
+    Args:
+        query: The AI topic to search for.
+               Examples: AI agents, LLMs, OpenAI,
+               Anthropic, robotics or Hugging Face.
+
+    Returns:
+        Recent AI news articles with title, source,
+        publication date, description and URL.
+    """
+
+    try:
+        results = DDGS().news(
+            query=f"AI artificial intelligence {query}",
+            region="wt-wt",
+            safesearch="moderate",
+            timelimit="w",
+            max_results=5
+        )
+
+        if not results:
+            return "No recent AI news articles found."
+
+        news_results = []
+
+        for index, article in enumerate(results, start=1):
+
+            news_results.append(
+                f"""
+                Article {index}
+                Title: {article.get('title', 'N/A')}
+                Source: {article.get('source', 'N/A')}
+                Published: {article.get('date', 'N/A')}
+                Description: {article.get('body', 'N/A')}
+                URL: {article.get('url', 'N/A')}
+                """
+            )
+
+        return "\n".join(news_results)
+
+    except Exception as e:
+        return f"Error searching AI news: {str(e)}"
+
 
 @tool
 def get_current_time_in_timezone(timezone: str) -> str:
@@ -36,32 +91,42 @@ def get_current_time_in_timezone(timezone: str) -> str:
 
 final_answer = FinalAnswerTool()
 
+search_tool = DuckDuckGoSearchTool(max_results=5)
+
+visit_tool = VisitWebpageTool()
+
 # If the agent does not answer, the model is overloaded, please use another model or the following Hugging Face Endpoint that also contains qwen2.5 coder:
 # model_id='https://pflgm2locj2t89co.us-east-1.aws.endpoints.huggingface.cloud' 
 
-model = HfApiModel(
-max_tokens=2096,
-temperature=0.5,
-model_id='Qwen/Qwen2.5-Coder-32B-Instruct',# it is possible that this model may be overloaded
-custom_role_conversions=None,
+model = LiteLLMModel(
+    model_id="groq/openai/gpt-oss-120b",
+    api_key=GROQ_API_KEY,
+    temperature=0.5,
+    max_tokens=2096,
+    num_retries=2
 )
 
 
 # Import tool from Hub
-image_generation_tool = load_tool("agents-course/text-to-image", trust_remote_code=True)
+# image_generation_tool = load_tool("agents-course/text-to-image", trust_remote_code=True)
 
 with open("prompts.yaml", 'r') as stream:
     prompt_templates = yaml.safe_load(stream)
     
 agent = CodeAgent(
     model=model,
-    tools=[final_answer], ## add your tools here (don't remove final answer)
+    tools=[
+        final_answer,
+        search_tool,
+        visit_tool,
+        search_ai_news,
+        get_current_time_in_timezone
+    ],
     max_steps=6,
     verbosity_level=1,
-    grammar=None,
     planning_interval=None,
-    name=None,
-    description=None,
+    name="ai_news_research_agent",
+    description="An agent that searches for recent AI developments.",
     prompt_templates=prompt_templates
 )
 
