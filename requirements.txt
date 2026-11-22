@@ -1,5 +1,7 @@
-markdownify
-smolagents==1.13.0
+smolagents[litellm]==1.13.0
+ddgs
+pytz
+pyyaml
 requests
-duckduckgo_search
+markdownify
 pandas
